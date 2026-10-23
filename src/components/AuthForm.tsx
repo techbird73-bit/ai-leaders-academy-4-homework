@@ -3,6 +3,14 @@
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+function authErrorMessage(message: string): string {
+  if (/email not confirmed/i.test(message))
+    return "이메일 인증이 안 된 계정입니다. Supabase > Authentication > Users 에서 이 계정을 Confirm 하거나 삭제 후 다시 가입하세요.";
+  if (/invalid login credentials/i.test(message)) return "이메일 또는 비밀번호가 올바르지 않습니다.";
+  if (/already registered/i.test(message)) return "이미 가입된 이메일입니다. 로그인하세요.";
+  return message;
+}
+
 export default function AuthForm() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
@@ -15,14 +23,17 @@ export default function AuthForm() {
     setBusy(true);
     setMessage(null);
     const auth = supabase().auth;
-    const { data, error } =
-      mode === "signin"
-        ? await auth.signInWithPassword({ email, password })
-        : await auth.signUp({ email, password });
+    let error = null;
+    if (mode === "signup") {
+      const res = await auth.signUp({ email, password });
+      error = res.error;
+      // 세션이 없으면(이미 가입된 이메일 등) 바로 로그인을 시도한다.
+      if (!error && !res.data.session) error = (await auth.signInWithPassword({ email, password })).error;
+    } else {
+      error = (await auth.signInWithPassword({ email, password })).error;
+    }
     setBusy(false);
-    if (error) setMessage(error.message);
-    else if (mode === "signup" && !data.session)
-      setMessage("가입 확인 메일을 보냈습니다. 메일의 링크를 누른 뒤 로그인하세요.");
+    if (error) setMessage(authErrorMessage(error.message));
   }
 
   return (
